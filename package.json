@@ -1,0 +1,40 @@
+{
+  "name": "voiceagent-bridge",
+  "version": "1.0.0",
+  "description": "Universal communication bridge for connecting multiple protocols to SingleInterface 2.0 VoiceAgent",
+  "main": "dist/bridge-core.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "node dist/bridge-core.js dev",
+    "start": "node dist/bridge-core.js",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "voiceagent",
+    "bridge",
+    "livekit",
+    "telephony",
+    "sip",
+    "webrtc",
+    "websocket"
+  ],
+  "author": "VoiceAgent Team",
+  "license": "MIT",
+  "dependencies": {
+    "@livekit/agents": "^0.4.0",
+    "@livekit/agents-plugin-silero": "^0.4.0",
+    "@livekit/rtc-node": "^0.11.1",
+    "ws": "^8.17.1",
+    "dotenv": "^16.4.5",
+    "pino": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
