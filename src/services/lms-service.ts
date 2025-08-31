@@ -1,4 +1,4 @@
-import axios from 'axios';
+// Using built-in fetch for HTTP requests (Node.js 18+)
 import logger from '../utils/logger.js';
 
 export interface SalesData {
@@ -35,25 +35,27 @@ export class LMSService {
       }
 
       // Real LMS API call
-      const response = await axios.post(`${this.baseUrl}/api/leads`, {
-        ...salesData,
-        timestamp: new Date(),
-        source: 'VoiceAgent Bridge',
-        campaign: 'SingleInterface Car Sales'
-      }, {
+      const response = await fetch(`${this.baseUrl}/api/leads`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json'
         },
-        timeout: 10000
+        body: JSON.stringify({
+          ...salesData,
+          timestamp: new Date(),
+          source: 'VoiceAgent Bridge',
+          campaign: 'SingleInterface Car Sales'
+        })
       });
 
-      logger.info('LMS API response', { response: response.data });
+      const responseData = await response.json();
+      logger.info('LMS API response', { response: responseData });
 
       return {
         success: true,
         message: 'Sales data successfully pushed to LMS',
-        lead_id: response.data.lead_id
+        lead_id: responseData.lead_id
       };
 
     } catch (error) {
@@ -94,14 +96,13 @@ export class LMSService {
         return true;
       }
 
-      const response = await axios.get(`${this.baseUrl}/api/health`, {
+      const response = await fetch(`${this.baseUrl}/api/health`, {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`
-        },
-        timeout: 5000
+        }
       });
 
-      return response.status === 200;
+      return response.ok;
     } catch (error) {
       logger.error('LMS connection validation failed', { error });
       return false;

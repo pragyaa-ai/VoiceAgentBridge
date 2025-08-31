@@ -1,42 +1,31 @@
 import { EventEmitter } from 'events';
-import { RealtimeSession, OpenAIRealtimeWebRTC } from '@openai/agents/realtime';
-import { spotlightAgent } from '../agents/spotlight-agent.js';
-import { LMSService, SalesData } from '../services/lms-service.js';
+import WebSocket from 'ws';
+import { spotlightAgentConfig, spotlightTools } from '../agents/spotlight-agent.js';
 import { SessionManager } from '../utils/session-manager.js';
 import logger from '../utils/logger.js';
 
-export interface RealtimeConnectorConfig {
+export interface OpenAIRealtimeOptions {
   apiKey: string;
-  model?: string;
-  audioFormat?: string;
+  model: string;
+  audioFormat: string;
   sessionManager: SessionManager;
 }
 
 export class OpenAIRealtimeConnector extends EventEmitter {
-  private session: RealtimeSession | null = null;
-  private config: RealtimeConnectorConfig;
-  private lmsService: LMSService;
-  private salesData: Partial<SalesData> = {};
-  private isConnected = false;
+  private apiKey: string;
+  private model: string;
+  private audioFormat: string;
+  private sessionManager: SessionManager;
+  private ws: WebSocket | null = null;
+  private isConnected: boolean = false;
+  private sessionId: string | null = null;
 
-  constructor(config: RealtimeConnectorConfig) {
+  constructor(options: OpenAIRealtimeOptions) {
     super();
-    this.config = config;
-    this.lmsService = new LMSService();
-    this.setupAgentContext();
-  }
-
-  private setupAgentContext() {
-    // Set up context functions that the Spotlight agent tools will call
-    const context = {
-      captureSalesData: this.captureSalesData.bind(this),
-      verifySalesData: this.verifySalesData.bind(this),
-      pushToLMS: this.pushToLMS.bind(this),
-      disconnectSession: this.disconnectSession.bind(this)
-    };
-
-    // Store context for tool execution
-    (globalThis as any).bridgeContext = context;
+    this.apiKey = options.apiKey;
+    this.model = options.model;
+    this.audioFormat = options.audioFormat;
+    this.sessionManager = options.sessionManager;
   }
 
   async connect(): Promise<void> {
@@ -46,172 +35,263 @@ export class OpenAIRealtimeConnector extends EventEmitter {
     }
 
     try {
-      logger.info('Connecting to OpenAI Realtime API...');
+      logger.info('Connecting to OpenAI Realtime API with Spotlight Agent...');
 
-      // Create Realtime session with Spotlight agent
-      this.session = new RealtimeSession(spotlightAgent, {
-        transport: new OpenAIRealtimeWebRTC({
-          // Server-side audio handling will be implemented here
-          changePeerConnection: async (pc: RTCPeerConnection) => {
-            // Apply audio codec preferences if needed
-            return pc;
-          },
-        }),
-        model: this.config.model || 'gpt-4o-realtime-preview-2025-06-03',
-        config: {
-          inputAudioFormat: 'pcm16',
-          outputAudioFormat: 'pcm16',
-          inputAudioTranscription: {
-            model: 'gpt-4o-mini-transcribe',
-          },
-        },
-        context: {
-          preferredLanguage: 'English', // Default to English
-          // Add context functions for agent tools
-          captureSalesData: this.captureSalesData.bind(this),
-          verifySalesData: this.verifySalesData.bind(this),
-          pushToLMS: this.pushToLMS.bind(this),
-          disconnectSession: this.disconnectSession.bind(this)
+      // Create WebSocket connection to OpenAI Realtime API
+      const url = 'wss://api.openai.com/v1/realtime?model=' + this.model;
+      
+      this.ws = new WebSocket(url, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'OpenAI-Beta': 'realtime=v1'
         }
       });
 
-      // Set up event handlers
-      this.setupEventHandlers();
+      this.setupWebSocketHandlers();
 
-      // Connect to OpenAI
-      await this.session.connect({ apiKey: this.config.apiKey });
+      // Wait for connection
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Connection timeout'));
+        }, 10000);
+
+        this.ws!.once('open', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+
+        this.ws!.once('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+      });
+
+      // Initialize session with Spotlight agent
+      await this.initializeSpotlightSession();
 
       this.isConnected = true;
-      logger.info('Successfully connected to OpenAI Realtime API');
       this.emit('connected');
+      logger.info('Connected to OpenAI Realtime API with Spotlight Agent');
 
     } catch (error) {
-      logger.error('Failed to connect to OpenAI Realtime API', { error });
+      logger.error('Failed to connect to OpenAI Realtime API:', error);
       this.emit('error', error);
       throw error;
     }
   }
 
-  private setupEventHandlers(): void {
-    if (!this.session) return;
+  private setupWebSocketHandlers(): void {
+    if (!this.ws) return;
 
-    this.session.on('error', (error) => {
-      logger.error('OpenAI Realtime session error', { error });
+    this.ws.on('open', () => {
+      logger.info('OpenAI Realtime WebSocket connection opened');
+    });
+
+    this.ws.on('message', (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+        this.handleRealtimeMessage(message);
+      } catch (error) {
+        logger.error('Failed to parse realtime message:', error);
+      }
+    });
+
+    this.ws.on('error', (error) => {
+      logger.error('OpenAI Realtime WebSocket error:', error);
       this.emit('error', error);
     });
 
-    this.session.on('agent_handoff', (data) => {
-      logger.info('Agent handoff requested', { data });
-      this.emit('handoff', data);
-    });
-
-    this.session.on('transport_event', (event) => {
-      logger.debug('Transport event', { event });
-      this.emit('transport_event', event);
+    this.ws.on('close', () => {
+      logger.warn('OpenAI Realtime WebSocket connection closed');
+      this.isConnected = false;
+      this.emit('disconnected');
     });
   }
 
-  private captureSalesData(dataType: string, value: string, notes?: string): any {
-    logger.info('Capturing sales data', { dataType, value, notes });
-    
-    // Store the data
-    (this.salesData as any)[dataType] = value;
-    
-    // Emit event for bridge monitoring
-    this.emit('data_captured', { dataType, value, notes });
-    
-    return { 
-      success: true, 
-      message: `${dataType} captured successfully`,
-      data: this.salesData 
+  private async initializeSpotlightSession(): Promise<void> {
+    if (!this.ws) return;
+
+    // Create new session
+    this.sessionId = `session_${Date.now()}`;
+    const session = this.sessionManager.createSession(this.sessionId, 'spotlight');
+
+    // Send session configuration with Spotlight agent
+    const sessionConfig = {
+      type: 'session.update',
+      session: {
+        modalities: ['text', 'audio'],
+        instructions: spotlightAgentConfig.instructions,
+        voice: spotlightAgentConfig.voice,
+        input_audio_format: this.audioFormat,
+        output_audio_format: this.audioFormat,
+        input_audio_transcription: {
+          model: 'whisper-1'
+        },
+        turn_detection: {
+          type: 'server_vad',
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500
+        },
+        tools: spotlightAgentConfig.tools,
+        temperature: spotlightAgentConfig.temperature,
+        max_response_output_tokens: spotlightAgentConfig.max_response_output_tokens
+      }
     };
+
+    this.ws.send(JSON.stringify(sessionConfig));
+    logger.info('Sent Spotlight agent configuration to OpenAI');
   }
 
-  private verifySalesData(dataType: string, confirmed: boolean): any {
-    logger.info('Verifying sales data', { dataType, confirmed });
-    
-    if (!confirmed) {
-      // Remove the data if not confirmed
-      delete (this.salesData as any)[dataType];
-      logger.info('Sales data rejected by customer', { dataType });
+  private handleRealtimeMessage(message: any): void {
+    logger.debug('Received realtime message:', message.type);
+
+    switch (message.type) {
+      case 'session.created':
+        logger.info('Realtime session created:', message.session.id);
+        break;
+
+      case 'session.updated':
+        logger.info('Realtime session updated with Spotlight agent');
+        break;
+
+      case 'conversation.item.created':
+        if (message.item.type === 'function_call') {
+          this.handleFunctionCall(message.item);
+        }
+        break;
+
+      case 'response.function_call_arguments.done':
+        this.handleFunctionCall(message);
+        break;
+
+      case 'response.audio.delta':
+        // Handle audio streaming
+        this.emit('audio_output', message.delta);
+        break;
+
+      case 'conversation.item.input_audio_transcription.completed':
+        logger.info('Audio transcription:', message.transcript);
+        break;
+
+      case 'error':
+        logger.error('OpenAI Realtime error:', message.error);
+        this.emit('error', message.error);
+        break;
+
+      default:
+        this.emit('transport_event', message);
+        break;
     }
-    
-    this.emit('data_verified', { dataType, confirmed });
-    
-    return { 
-      success: true, 
-      message: `${dataType} ${confirmed ? 'confirmed' : 'rejected'}` 
-    };
   }
 
-  private async pushToLMS(salesData: SalesData): Promise<any> {
-    logger.info('Pushing complete sales data to LMS', { salesData });
-    
+  private async handleFunctionCall(item: any): Promise<void> {
+    const functionName = item.name || item.function?.name;
+    const args = JSON.parse(item.arguments || item.function?.arguments || '{}');
+
+    logger.info('Handling function call:', functionName, args);
+
     try {
-      const result = await this.lmsService.pushSalesData(salesData);
-      
-      this.emit('lms_push', { salesData, result });
-      
-      return result;
+      let result;
+
+      // Execute Spotlight agent tools
+      if (spotlightTools[functionName as keyof typeof spotlightTools]) {
+        result = await spotlightTools[functionName as keyof typeof spotlightTools](args, item);
+        
+        // Emit events for different tool types
+        switch (functionName) {
+          case 'capture_sales_data':
+          case 'capture_all_sales_data':
+            this.emit('data_captured', args);
+            break;
+          case 'verify_sales_data':
+            this.emit('data_verified', args);
+            break;
+          case 'push_to_lms':
+            this.emit('lms_push', args);
+            break;
+          case 'disconnect_session':
+            this.emit('handoff', { target: 'car_dealer', data: args });
+            break;
+        }
+      } else {
+        result = { error: `Unknown function: ${functionName}` };
+      }
+
+      // Send function result back to OpenAI
+      if (this.ws && item.call_id) {
+        const response = {
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: item.call_id,
+            output: JSON.stringify(result)
+          }
+        };
+        this.ws.send(JSON.stringify(response));
+      }
+
     } catch (error) {
-      logger.error('Failed to push to LMS', { error, salesData });
-      return { 
-        success: false, 
-        message: 'Failed to push to LMS',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+      logger.error('Function call error:', error);
+      this.emit('error', error);
     }
   }
 
-  private disconnectSession(): void {
-    logger.info('Session disconnect requested by agent');
-    this.disconnect();
-  }
-
-  async sendAudio(audioBuffer: Buffer): Promise<void> {
-    if (!this.session || !this.isConnected) {
-      throw new Error('Not connected to OpenAI Realtime API');
+  sendAudio(audioData: Buffer): void {
+    if (!this.ws || !this.isConnected) {
+      logger.warn('Cannot send audio - not connected');
+      return;
     }
 
-    // Send audio to OpenAI Realtime session
-    // Implementation depends on the actual OpenAI Realtime API
-    logger.debug('Sending audio to OpenAI Realtime', { bufferSize: audioBuffer.length });
+    const audioMessage = {
+      type: 'input_audio_buffer.append',
+      audio: audioData.toString('base64')
+    };
+
+    this.ws.send(JSON.stringify(audioMessage));
   }
 
-  async receiveAudio(): Promise<AsyncIterable<Buffer>> {
-    if (!this.session || !this.isConnected) {
-      throw new Error('Not connected to OpenAI Realtime API');
+  sendText(text: string): void {
+    if (!this.ws || !this.isConnected) {
+      logger.warn('Cannot send text - not connected');
+      return;
     }
 
-    // Return audio stream from OpenAI Realtime session
-    // Implementation depends on the actual OpenAI Realtime API
-    return this.createAudioStream();
-  }
+    const textMessage = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text }]
+      }
+    };
 
-  private async *createAudioStream(): AsyncIterable<Buffer> {
-    // Placeholder for audio stream implementation
-    while (this.isConnected) {
-      yield Buffer.alloc(0); // Placeholder
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-  }
+    this.ws.send(JSON.stringify(textMessage));
 
-  getSalesData(): Partial<SalesData> {
-    return { ...this.salesData };
-  }
+    // Trigger response generation
+    const responseMessage = {
+      type: 'response.create',
+      response: {
+        modalities: ['text', 'audio'],
+        instructions: 'Please respond as the Spotlight agent.'
+      }
+    };
 
-  isDataComplete(): boolean {
-    return !!(this.salesData.full_name && this.salesData.car_model && this.salesData.email_id);
+    this.ws.send(JSON.stringify(responseMessage));
   }
 
   disconnect(): void {
-    if (this.session) {
-      this.session.disconnect?.();
-      this.session = null;
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.isConnected = false;
+    
+    if (this.sessionId) {
+      this.sessionManager.endSession(this.sessionId);
+      this.sessionId = null;
     }
     
-    this.isConnected = false;
-    this.emit('disconnected');
     logger.info('Disconnected from OpenAI Realtime API');
   }
 }

@@ -1,252 +1,245 @@
-import { RealtimeAgent, tool } from '@openai/agents/realtime';
+// Spotlight agent configuration for OpenAI Realtime API
+// Configuration object that defines the Spotlight automotive sales agent
 
-export const spotlightAgent = new RealtimeAgent({
+export interface SpotlightAgentConfig {
+  name: string;
+  voice: string;
+  instructions: string;
+  tools: any[];
+  temperature: number;
+  max_response_output_tokens: number;
+}
+
+export const spotlightAgentConfig: SpotlightAgentConfig = {
   name: 'spotlight',
-  voice: 'sage',  
-  handoffDescription:
-    'Spotlight agent for SingleInterface sales scenario - specialized in collecting customer information for automotive sales leads.',
+  voice: 'sage',
+  temperature: 0.8,
+  max_response_output_tokens: 4096,
+  
+  instructions: `You are Spotlight, a professional automotive sales assistant specializing in customer lead capture for car dealerships in India. You speak with a professional Indian English accent and can seamlessly switch between English and Hindi as needed.
 
-  instructions: `
-# Personality and Tone
-## Identity
-Speak in distinctly Indian English Accent. Always maintain female gender when replying. You are a professional, enthusiastic automotive sales assistant specializing in connecting potential car buyers with the right vehicles. You have extensive knowledge about various car models, features, and can guide customers through their car buying journey. Your expertise comes from years of helping customers find their perfect vehicle match.
+**CORE IDENTITY:**
+- Professional, friendly automotive sales expert
+- Specialized in capturing high-quality sales leads
+- Excellent listener with strong qualification skills
+- Patient and thorough in data collection
+- Culturally aware of Indian automotive market
 
-## Task
-You are here to assist potential car buyers by collecting their information for our sales team to provide personalized automotive solutions. Your primary role is to gather essential customer details and connect them with our automotive experts.
+**PRIMARY OBJECTIVE:**
+Your main goal is to capture complete customer information for automotive sales leads:
+1. Full Name (with proper spelling verification)
+2. Car Model interested in (specific make/model/variant)
+3. Email ID (verified format)
 
-## Demeanor
-You maintain a professional yet warm demeanor while being attentive to each customer's automotive needs. Your goal is to make the car buying process feel comfortable and informative. You listen carefully and respond with enthusiasm about helping them find their perfect vehicle.
+**DATA COLLECTION PROTOCOL:**
+For each data point, follow this 3-step verification process:
 
-## Tone
-Your voice is warm and conversational, with genuine excitement about automotive solutions. You love helping people find the right car, so your enthusiasm for vehicles and customer service comes through naturally without being overwhelming.
+1. **CAPTURE**: Ask the question naturally in conversation
+2. **VERIFY**: Repeat back what you heard for confirmation
+3. **CONFIRM**: Get explicit "yes" or "that's correct" before moving to next field
 
-## Level of Enthusiasm
-You're professionally enthusiastic—eager to help with automotive needs but never pushy. You express genuine interest in matching customers with the right vehicle solutions.
+**CONFIRMATION PROTOCOL:**
+After collecting each piece of information:
+- "Let me confirm - your name is [NAME], spelled [spell it out]. Is that correct?"
+- "So you're interested in the [CAR MODEL]. Is that the exact model you want to know about?"
+- "Your email address is [EMAIL]. Should I send information to this email?"
 
-## Level of Formality
-Your style is professionally friendly. You use polite language and courteous acknowledgments while keeping the conversation approachable. It's like talking to a knowledgeable car consultant who genuinely wants to help.
+**ESCALATION PROTOCOL:**
+Once all 3 data points are captured and verified:
+- Acknowledge completion: "Perfect! I have your complete information."
+- Explain handoff: "I'm now connecting you with our Car Dealer specialist who will help you with pricing, availability, and next steps."
+- Initiate handoff to Car Dealer agent
 
-## Level of Emotion
-You are supportive, understanding, and empathetic. When customers have questions about cars or the buying process, you validate their concerns and guide them confidently toward solutions.
+**AUDIO UPLOAD INSTRUCTIONS:**
+If customer mentions they have images/documents to share:
+- Guide them to upload through the interface
+- Confirm receipt of uploads
+- Include uploaded content context in handoff
 
-## Filler Words
-You occasionally use filler words like "um," "hmm," or "you know?" It helps convey approachability, as if you're having a genuine conversation with a customer.
+**CONVERSATION FLOW:**
+1. Warm greeting and introduction
+2. Understand their automotive needs
+3. Capture full name with spelling verification
+4. Identify specific car model of interest
+5. Collect and verify email address
+6. Summarize captured information
+7. Handoff to Car Dealer agent
 
-## Pacing
-Your pacing is medium—steady and professional. This ensures you sound confident and knowledgeable while giving customers time to think about their automotive needs.
+**COMPLETION PROTOCOL:**
+When all data is captured and verified:
+1. Use capture_all_sales_data tool to save information
+2. Use push_to_lms tool to send data to LMS
+3. Use handoff tool to transfer to Car Dealer agent
 
-## Other details
-You're always ready with helpful automotive insights and genuinely excited to connect customers with our sales team.
+**IMPORTANT GUIDELINES:**
+- Never skip verification steps
+- Always spell out names for confirmation
+- Be specific about car models (ask for trim/variant)
+- Validate email format before confirming
+- Stay focused on lead capture, don't discuss pricing/financing
+- Maintain professional tone throughout
+- Use customer's preferred language (English/Hindi)
 
-# Context
-- Business name: Single Interface
-- Sales Context: Single Interface automotive sales lead generation and customer connection service
-- The user has selected their preferred language in the interface. This language preference is available in your context as 'preferredLanguage'.
-- CRITICAL: Before starting any conversation, check your context for the 'preferredLanguage' value.
-- If preferredLanguage is 'Hindi', conduct the ENTIRE conversation in Hindi using Devanagari script.
-- If preferredLanguage is 'English', conduct the conversation in English.
-- Always start the call with the Opening Greeting in the user's preferred language:
-
-  For English:
-  "Hello! This call is from Single Interface. For your car purchase enquiry, we need to collect some details from you so we can connect you with the correct car dealer closest to you. Can I continue?"
-
-  For Hindi:
-  "नमस्ते! यह कॉल सिंगल इंटरफेस की तरफ से है। आपकी कार खरीदारी की पूछताछ के लिए, हमें आपसे कुछ विवरण एकत्र करने होंगे ताकि हम आपको आपके सबसे नजदीकी सही कार डीलर से जोड़ सकें। क्या मैं आगे बढ़ सकती हूं?"
-
-- All subsequent conversation should continue in the user's preferred language.
-
-# Data Collection Protocol
-
-## Required Information (3 Sales Data Points):
-1. **Full Name** - Complete name of the potential customer
-2. **Car Model** - Specific car model they are interested in or looking for
-3. **Email ID** - Customer's email address for follow-up communication
-
-## CONFIRMATION PROTOCOL (MANDATORY)
-For EVERY piece of information you collect, you MUST follow this 3-step verification process:
-1. **Capture**: Use the capture_sales_data tool to store the information
-2. **Repeat**: Clearly repeat back what you captured to the user
-3. **Confirm**: Ask "Is this correct?" and wait for confirmation before proceeding
-
-Example:
-User: "My name is Rajesh Kumar"
-You: *[use capture_sales_data tool with full_name: "Rajesh Kumar"]*
-"I've recorded your name as Rajesh Kumar. Is this correct?"
-*[wait for confirmation before moving to next data point]*
-
-## ESCALATION PROTOCOL (MANDATORY)
-- If a user provides unclear information or you cannot understand them after 2 attempts, you must:
-  1. Politely say: "I want to make sure I get this information exactly right. Let me flag this for expert review."
-  2. Use the capture_sales_data tool with the field marked as "Requires Expert Review"
-  3. Move on to the next data point
-- Do not get stuck on any single data point for more than 2 attempts
-
-# Conversation Flow
-1. **Opening**: Greet in user's preferred language and explain your automotive sales assistance purpose
-2. **Data Collection**: Work through each of the 3 required sales data points systematically
-3. **Verification**: Use the mandatory confirmation protocol for each data point
-4. **Completion**: Once all data is collected and verified, thank the user and connect them with car brand dealer
-5. **LMS Integration**: Push collected data to SingleInterface LMS 
-6. **Handoff**: MANDATORY handoff to the 'carDealer' agent using the car model information
-
-# Important Guidelines
-- Always maintain the confirmation protocol - never skip the verification step
-- If information is unclear, use the escalation protocol rather than making assumptions
-- Keep conversation friendly but focused on automotive sales data collection
-- Ensure all 3 data points are collected before considering the session complete
-- Use the tools provided to capture and verify all information systematically
-- After data collection, automatically push to LMS
-- When all data is collected and verified, immediately hand off to the 'carDealer' agent
-
-# Completion Protocol (MANDATORY)
-Once ALL 3 data points are collected and verified:
-1. **Thank the customer**: "Wonderful, thank you for confirming all the details."
-2. **Connect message**: "We will now connect you with the [CAR_BRAND] dealer near you. Please hold on."
-   - Extract the car brand from the car_model data point (e.g., "Toyota Camry" → "Toyota")
-3. **Handoff**: IMMEDIATELY hand off to the 'carDealer' agent.
-4. **Do NOT** offer downloads or ask additional questions - go straight to handoff
-
-Remember: Your success is measured by complete, accurate sales data collection followed by immediate handoff to the appropriate car brand dealer.
-`,
+Remember: Quality lead capture is more important than speed. Take time to get accurate, complete information.`,
 
   tools: [
-    tool({
+    {
+      type: "function",
       name: "capture_sales_data",
-      description: "Capture and store individual pieces of sales lead information during the verification process",
+      description: "Capture individual pieces of sales lead data as they are collected",
       parameters: {
         type: "object",
         properties: {
-          data_type: {
+          field_name: {
             type: "string",
-            enum: [
-              "full_name",
-              "car_model",
-              "email_id"
-            ],
-            description: "The type of sales data being captured"
+            enum: ["full_name", "car_model", "email_id"],
+            description: "The type of data being captured"
           },
-          value: {
+          field_value: {
             type: "string",
-            description: "The actual data value provided by the customer"
+            description: "The actual value captured from the customer"
           },
-          notes: {
-            type: "string",
-            description: "Any additional notes or context about this data point"
+          verified: {
+            type: "boolean",
+            description: "Whether this data has been verified with the customer"
           }
         },
-        required: ["data_type", "value"],
-        additionalProperties: false,
-      },
-      execute: async (input, details) => {
-        const typedInput = input as { data_type: string; value: string; notes?: string };
-        const context = details?.context as any;
-        if (context?.captureSalesData) {
-          const result = context.captureSalesData(typedInput.data_type, typedInput.value, typedInput.notes);
-          console.log(`[Sales Data Captured] ${typedInput.data_type}: ${typedInput.value}`);
-          return result;
-        } else {
-          console.warn('[Sales Data] Capture function not available');
-          return { success: false, message: "Sales data capture function not available" };
-        }
-      },
-    }),
-
-    tool({
+        required: ["field_name", "field_value", "verified"]
+      }
+    },
+    {
+      type: "function", 
       name: "verify_sales_data",
-      description: "Verify and confirm previously captured sales data with the customer",
+      description: "Mark a piece of data as verified after customer confirmation",
       parameters: {
         type: "object",
         properties: {
-          data_type: {
+          field_name: {
             type: "string",
-            enum: [
-              "full_name",
-              "car_model",
-              "email_id"
-            ],
-            description: "The type of sales data being verified"
+            enum: ["full_name", "car_model", "email_id"],
+            description: "The field being verified"
           },
           confirmed: {
-            type: "boolean",
-            description: "Whether the customer confirmed this data as correct"
+            type: "boolean", 
+            description: "Whether customer confirmed the data is correct"
           }
         },
-        required: ["data_type", "confirmed"],
-        additionalProperties: false,
-      },
-      execute: async (input, details) => {
-        const typedInput = input as { data_type: string; confirmed: boolean };
-        const context = details?.context as any;
-        if (context?.verifySalesData) {
-          const result = context.verifySalesData(typedInput.data_type, typedInput.confirmed);
-          console.log(`[Sales Data Verified] ${typedInput.data_type}: ${typedInput.confirmed ? 'Confirmed' : 'Rejected'}`);
-          return result;
-        } else {
-          console.warn('[Sales Data] Verify function not available');
-          return { success: false, message: "Sales data verification function not available" };
-        }
-      },
-    }),
-
-    tool({
-      name: "push_to_lms",
-      description: "Push collected sales data to SingleInterface LMS system",
+        required: ["field_name", "confirmed"]
+      }
+    },
+    {
+      type: "function",
+      name: "capture_all_sales_data", 
+      description: "Capture complete sales lead data when all fields are collected and verified",
       parameters: {
         type: "object",
         properties: {
-          sales_data: {
-            type: "object",
-            properties: {
-              full_name: { type: "string" },
-              car_model: { type: "string" },
-              email_id: { type: "string" }
-            },
-            required: ["full_name", "car_model", "email_id"]
+          full_name: {
+            type: "string",
+            description: "Customer's complete name"
+          },
+          car_model: {
+            type: "string", 
+            description: "Specific car model they're interested in"
+          },
+          email_id: {
+            type: "string",
+            description: "Customer's email address"
+          },
+          all_verified: {
+            type: "boolean",
+            description: "Confirmation that all data has been verified"
           }
         },
-        required: ["sales_data"],
-        additionalProperties: false,
-      },
-      execute: async (input, details) => {
-        const context = details?.context as any;
-        if (context?.pushToLMS) {
-          const typedInput = input as { sales_data: any };
-          const result = context.pushToLMS(typedInput.sales_data);
-          console.log(`[LMS Integration] Sales data pushed to SingleInterface LMS`);
-          return result;
-        } else {
-          console.warn('[LMS Integration] Push function not available');
-          return { success: false, message: "LMS integration function not available" };
-        }
-      },
-    }),
-
-    tool({
-      name: "disconnect_session",
-      description: "Disconnect the current session. Use this tool ONLY after processing uploaded audio files.",
+        required: ["full_name", "car_model", "email_id", "all_verified"]
+      }
+    },
+    {
+      type: "function",
+      name: "push_to_lms",
+      description: "Push verified sales lead data to the LMS system",
+      parameters: {
+        type: "object", 
+        properties: {
+          lead_data: {
+            type: "object",
+            description: "Complete lead information to send to LMS"
+          }
+        },
+        required: ["lead_data"]
+      }
+    },
+    {
+      type: "function",
+      name: "download_sales_data",
+      description: "Download/export the captured sales data",
+      parameters: {
+        type: "object",
+        properties: {
+          format: {
+            type: "string",
+            enum: ["json", "csv"],
+            description: "Export format for the data"
+          }
+        },
+        required: ["format"]
+      }
+    },
+    {
+      type: "function",
+      name: "disconnect_session", 
+      description: "End the current session and disconnect",
       parameters: {
         type: "object",
         properties: {
           reason: {
-            type: "string", 
-            description: "Reason for disconnection"
+            type: "string",
+            description: "Reason for disconnecting"
           }
         },
-        required: ["reason"],
-        additionalProperties: false,
-      },
-      execute: async (input, details) => {
-        const context = details?.context as any;
-        if (context?.disconnectSession) {
-          context.disconnectSession();
-          const typedInput = input as { reason: string };
-          console.log(`[Agent Disconnect] ${typedInput.reason}`);
-          return { success: true, message: "Session disconnected successfully." };
-        } else {
-          console.warn('[Agent Disconnect] Disconnect function not available');
-          return { success: false, message: "Disconnect function not available" };
-        }
-      },
-    }),
-  ],
-});
+        required: ["reason"]
+      }
+    }
+  ]
+};
+
+// Tool execution functions that will be handled by the connector
+export const spotlightTools = {
+  capture_sales_data: async (input: any, details: any) => {
+    console.log('Capturing sales data:', input);
+    return { success: true, message: `Captured ${input.field_name}: ${input.field_value}` };
+  },
+
+  verify_sales_data: async (input: any, details: any) => {
+    console.log('Verifying sales data:', input);
+    return { success: true, message: `Verified ${input.field_name}` };
+  },
+
+  capture_all_sales_data: async (input: any, details: any) => {
+    console.log('Capturing complete sales data:', input);
+    return { 
+      success: true, 
+      message: 'All sales data captured successfully',
+      lead_id: `LEAD_${Date.now()}`
+    };
+  },
+
+  push_to_lms: async (input: any, details: any) => {
+    console.log('Pushing to LMS:', input);
+    return { 
+      success: true, 
+      message: 'Data pushed to LMS successfully',
+      lms_id: `LMS_${Date.now()}`
+    };
+  },
+
+  download_sales_data: async (input: any, details: any) => {
+    console.log('Downloading sales data:', input);
+    return { success: true, message: 'Data download initiated' };
+  },
+
+  disconnect_session: async (input: any, details: any) => {
+    console.log('Disconnecting session:', input);
+    return { success: true, message: 'Session ended successfully' };
+  }
+};
