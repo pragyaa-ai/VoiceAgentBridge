@@ -3,7 +3,7 @@ module.exports = {
     name: 'voiceagent-bridge',
     script: 'dist/bridge-core.js',
     args: 'dev',
-    cwd: '/opt/voiceagent-bridge',
+    cwd: '/home/info/VoiceAgentBridge',
     env: {
       NODE_ENV: 'production',
       LOG_LEVEL: 'info'
