@@ -122,9 +122,8 @@ async function main() {
 }
 
 // Start the bridge if this file is run directly
-if (require.main === module) {
-  main().catch((error) => {
-    logger.error('Unhandled error:', error);
-    process.exit(1);
-  });
-}
+// In ES modules, we can't use require.main === module, so we always start
+main().catch((error) => {
+  logger.error('Unhandled error:', error);
+  process.exit(1);
+});

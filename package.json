@@ -2,6 +2,7 @@
   "name": "voiceagent-bridge",
   "version": "1.0.0",
   "description": "Universal Communication Bridge for VoiceAgent",
+  "type": "module",
   "main": "dist/bridge-core.js",
   "scripts": {
     "build": "tsc",
