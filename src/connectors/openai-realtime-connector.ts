@@ -34,6 +34,11 @@ export class OpenAIRealtimeConnector extends EventEmitter {
       return;
     }
 
+    // Validate API key
+    if (!this.apiKey || this.apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
+      throw new Error('OpenAI API key is required. Please set OPENAI_API_KEY in config/production.env');
+    }
+
     try {
       logger.info('Connecting to OpenAI Realtime API with Spotlight Agent...');
 
@@ -113,7 +118,10 @@ export class OpenAIRealtimeConnector extends EventEmitter {
 
     // Create new session
     this.sessionId = `session_${Date.now()}`;
-    const session = this.sessionManager.createSession(this.sessionId, 'spotlight');
+    const session = this.sessionManager.createSession({ 
+      agentType: 'spotlight',
+      sessionId: this.sessionId 
+    });
 
     // Send session configuration with Spotlight agent
     const sessionConfig = {

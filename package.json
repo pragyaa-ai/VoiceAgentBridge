@@ -13,8 +13,7 @@
     "ws": "^8.14.2",
     "dotenv": "^16.3.1",
     "pino": "^8.15.0",
-    "openai": "^4.65.0",
-    "wrtc": "^0.4.7"
+    "openai": "^4.65.0"
   },
   "devDependencies": {
     "@types/node": "^20.8.0",
