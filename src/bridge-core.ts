@@ -1,52 +1,66 @@
 import dotenv from 'dotenv';
-import { SI2Connector } from './connectors/si2-connector.js';
+import { OpenAIRealtimeConnector } from './connectors/openai-realtime-connector.js';
 import { SessionManager } from './utils/session-manager.js';
+import { LMSService } from './services/lms-service.js';
 import logger from './utils/logger.js';
 
 // Load environment variables
 dotenv.config({ path: './config/production.env' });
 
 export class VoiceAgentBridge {
-  private si2Connector: SI2Connector;
+  private realtimeConnector: OpenAIRealtimeConnector;
   private sessionManager: SessionManager;
+  private lmsService: LMSService;
   private isRunning = false;
 
   constructor() {
-    const si2Endpoint = process.env.SI2_ENDPOINT || 'ws://localhost:3000';
-    this.si2Connector = new SI2Connector(si2Endpoint);
+    // Initialize services
     this.sessionManager = new SessionManager();
+    this.lmsService = new LMSService();
+    
+    // Initialize OpenAI Realtime connector with Spotlight agent
+    this.realtimeConnector = new OpenAIRealtimeConnector({
+      apiKey: process.env.OPENAI_API_KEY || '',
+      model: 'gpt-4o-realtime-preview-2025-06-03',
+      audioFormat: 'pcm16',
+      sessionManager: this.sessionManager
+    });
     
     this.setupEventHandlers();
   }
 
   private setupEventHandlers(): void {
-    this.si2Connector.on('connected', () => {
-      logger.info('Bridge connected to SingleInterface 2.0');
+    this.realtimeConnector.on('connected', () => {
+      logger.info('Bridge connected to OpenAI Realtime API with Spotlight Agent');
     });
 
-    this.si2Connector.on('disconnected', () => {
-      logger.warn('Bridge disconnected from SingleInterface 2.0');
+    this.realtimeConnector.on('disconnected', () => {
+      logger.warn('Bridge disconnected from OpenAI Realtime API');
     });
 
-    this.si2Connector.on('error', (error) => {
-      logger.error('SI2 connection error:', error);
+    this.realtimeConnector.on('error', (error) => {
+      logger.error('OpenAI Realtime connection error:', error);
     });
 
-    this.si2Connector.on('audio', (audioData) => {
-      logger.debug('Received audio from SI2');
-      // TODO: Forward to LiveKit when implemented
+    this.realtimeConnector.on('data_captured', (data) => {
+      logger.info('Sales data captured:', data);
     });
 
-    this.si2Connector.on('text', (textData) => {
-      logger.info('Received text from SI2:', textData);
+    this.realtimeConnector.on('data_verified', (data) => {
+      logger.info('Sales data verified:', data);
     });
 
-    this.si2Connector.on('handoff', (handoffData) => {
-      logger.info('Agent handoff:', handoffData);
+    this.realtimeConnector.on('lms_push', (data) => {
+      logger.info('Sales data pushed to LMS:', data);
     });
 
-    this.si2Connector.on('session_end', () => {
-      logger.info('SI2 session ended');
+    this.realtimeConnector.on('handoff', (handoffData) => {
+      logger.info('Agent handoff requested:', handoffData);
+      // TODO: Implement handoff to Car Dealer agent
+    });
+
+    this.realtimeConnector.on('transport_event', (event) => {
+      logger.debug('OpenAI transport event:', event);
     });
   }
 
@@ -57,13 +71,21 @@ export class VoiceAgentBridge {
     }
 
     try {
-      logger.info('Starting VoiceAgent Bridge...');
+      logger.info('Starting VoiceAgent Bridge with Spotlight Agent...');
       
-      // Connect to SingleInterface 2.0
-      await this.si2Connector.connect();
+      // Validate LMS connection
+      const lmsConnected = await this.lmsService.validateLMSConnection();
+      if (lmsConnected) {
+        logger.info('LMS connection validated');
+      } else {
+        logger.warn('LMS connection failed - using dummy mode');
+      }
+      
+      // Connect to OpenAI Realtime API
+      await this.realtimeConnector.connect();
       
       this.isRunning = true;
-      logger.info('VoiceAgent Bridge started successfully');
+      logger.info('VoiceAgent Bridge started successfully with Spotlight Agent');
       
       // Keep the process running
       this.keepAlive();
@@ -89,7 +111,7 @@ export class VoiceAgentBridge {
 
     logger.info('Stopping VoiceAgent Bridge...');
     
-    this.si2Connector.disconnect();
+    this.realtimeConnector.disconnect();
     this.isRunning = false;
     
     logger.info('VoiceAgent Bridge stopped');
